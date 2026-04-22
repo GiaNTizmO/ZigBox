@@ -1,0 +1,28 @@
+diff --git a/build.zig b/build.zig
+index 2d196041..1de76656 100644
+--- a/build.zig
++++ b/build.zig
+@@ -217,0 +218,18 @@ pub fn build(b: *std.Build) !void {
++    // --- zigbox: expose compiler as a static library --------------
++    // Reuses exe.root_module so we share the module graph (InternPool,
++    // AstGen, Sema, Air, link backends, ...) with the executable.
++    // Any later modifications to exe.root_module (build_options,
++    // link_libc, LLVM deps, ...) propagate here because root_module
++    // is passed by reference. The resulting libzig.a / zig.lib can
++    // be linked into an external host that calls
++    //     @import("main.zig").mainArgs(gpa, arena, args)
++    // directly. See https://github.com/cardag/zigbox.
++    const libzig = b.addStaticLibrary(.{
++        .name = "zig",
++        .root_module = exe.root_module,
++    });
++    const libzig_install = b.addInstallArtifact(libzig, .{});
++    const libzig_step = b.step("libzig", "Build the zig compiler as a static library");
++    libzig_step.dependOn(&libzig_install.step);
++    // --- /zigbox --------------------------------------------------
+diff --git a/src/main.zig b/src/main.zig
+--- a/src/main.zig
++++ b/src/main.zig
+@@
+-fn mainArgs(gpa: Allocator, arena: Allocator, args: []const []const u8) !void {
++pub fn mainArgs(gpa: Allocator, arena: Allocator, args: []const []const u8) !void {

@@ -71,12 +71,82 @@ entry();
 The milestone numbering matches section 9.9 of the plan (iOS), plus separate steps for the other platforms.
 
 ### Phase 1 — desktop (proof of concept)
-- [ ] Skeleton Zig application with a `build.zig` project.
-- [ ] Embed the Zig compiler as a static library, variant A (CLI-as-library), see plan §4.2.
-- [ ] Linux: compile + `dlopen` + `dlsym` a minimal `entry()`.
-- [ ] Windows: same thing via `LoadLibrary`.
-- [ ] macOS: same thing via `dlopen`.
-- [ ] Host bridge API (C ABI): `host_log`, `host_ui_alert`, `host_http_get` (see plan §10).
+- [x] Skeleton Zig application with a `build.zig` project.
+- [x] Embed the Zig compiler as a static library, variant A (CLI-as-library), see plan §4.2.
+  - Upstream Zig is vendored as a git submodule under `deps/zig`.
+  - `patches/zig-expose-lib.patch` adds a `libzig` static-library artifact to upstream's `build.zig` (one additive block, no edits to existing lines — survives upgrades cleanly).
+  - `scripts/setup-zig-source.sh` clones, patches, and builds `libzig.a`.
+  - Our `build.zig` links `libzig.a` into the host and imports `src/main.zig` from upstream as a Zig module, calling `mainArgs()` directly.
+- [ ] **M1.5** — replace `std.process.exit` call sites in the embedded compiler with recoverable errors so compile failures don't kill the host. Known limitation; happy-path smoke test doesn't trigger it.
+- [ ] Linux: compile + `dlopen` + `dlsym` a minimal `entry()` — code ready, not yet verified end-to-end.
+- [ ] Windows: same thing via `LoadLibrary` — code ready, not yet verified.
+- [ ] macOS: same thing via `dlopen` — code ready, not yet verified.
+- [x] Host bridge API (C ABI): `host_log`, `host_greet` in `src/bridge.zig`. `host_ui_alert` / `host_http_get` deferred to Phase 6.
+
+Local verification of M1:
+
+**Linux / macOS:**
+
+```bash
+# Important: the bootstrap zig must exactly match the selected upstream version.
+# By default `supported` = the project's tested version (currently 0.14.0).
+
+# One-time: clone upstream Zig, apply patch, build libzig.a (~minutes).
+./scripts/setup-zig-source.sh
+
+# Same thing, but auto-download a matching bootstrap Zig:
+ZIG=auto ./scripts/setup-zig-source.sh
+
+# Explicitly choose a supported release:
+ZIG_TAG=0.14.0 ZIG=auto ./scripts/setup-zig-source.sh
+
+# Pull the latest stable release from ziglang.org:
+ZIG_TAG=latest-stable ZIG=auto ./scripts/setup-zig-source.sh
+
+# Experimental: latest master snapshot.
+ZIG_TAG=master ZIG=auto ./scripts/setup-zig-source.sh
+
+# End-to-end compile + dlopen + call:
+zig build smoke
+
+# Or interactively with a different example:
+zig build run -- examples/use_bridge.zig
+```
+
+**Windows (PowerShell):**
+
+```powershell
+# Important: the bootstrap zig must exactly match the selected upstream version.
+# By default `supported` = the project's tested version (currently 0.14.0).
+
+# One-time setup.
+.\scripts\setup-zig-source.ps1
+
+# Same thing, but auto-download a matching bootstrap Zig:
+.\scripts\setup-zig-source.ps1 -Zig auto
+
+# Explicitly choose a supported release:
+.\scripts\setup-zig-source.ps1 -Tag 0.14.0 -Zig auto
+
+# Pull the latest stable release from ziglang.org:
+.\scripts\setup-zig-source.ps1 -Tag latest-stable -Zig auto
+
+# Experimental: latest master snapshot.
+.\scripts\setup-zig-source.ps1 -Tag master -Zig auto
+
+# The script prints the exact path to the produced static library
+# (zig.lib under MSVC, libzig.a under MinGW). Pass it to subsequent
+# builds via -Dlibzig if the default path doesn't match:
+zig build smoke -Dlibzig="deps\zig\zig-out\lib\zig.lib"
+
+# If the linker reports unresolved LLVM/Win32 symbols, feed extras:
+zig build smoke -Dlibzig="…\zig.lib" -Dextra-libs=dbghelp,psapi,shell32
+```
+
+Known Windows caveats (tracked against M1.5/Phase 1):
+
+- **Symbol export from EXE to runtime-loaded DLL.** On Linux/macOS `rdynamic` puts `host_log` / `host_greet` in the host's dynamic symbol table and `dlopen`'d user DLLs resolve against them automatically. On Windows (MSVC) `rdynamic` is effectively a no-op — EXEs don't usually export symbols. The smoke test will compile the user DLL fine, but the link step inside the embedded compiler may fail to resolve the `extern fn host_log(...)` references. Fix route: either (a) emit a stub import library for the host and have the embedded compiler link user code against it, or (b) switch the host bridge pattern to pointer-passing through `entry(ctx: *const HostBridge)`. (b) is cross-platform-cleaner — flagged as M1.6.
+- **Host must be built with the same ABI as libzig.** If upstream Zig on your machine builds libzig with `windows-msvc`, the host must also target `windows-msvc`; MinGW vs MSVC libs don't mix cleanly. `zig build -Dtarget=x86_64-windows-msvc` is the explicit form.
 
 ### Phase 2 — Android
 - [ ] Gradle project with a JNI bridge to the Zig host.

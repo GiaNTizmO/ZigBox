@@ -1,0 +1,25 @@
+.{
+    .name = .zigbox,
+    .fingerprint = 0xde40c4aa9a5eaaba,
+    .version = "0.0.0",
+    .minimum_zig_version = "0.14.0",
+
+    // The upstream Zig compiler is intentionally NOT declared here
+    // as a package dependency. We vendor it as a git submodule under
+    // deps/zig and build its libzig.a out-of-tree (see build.zig and
+    // scripts/setup-zig-source.sh). This keeps Zig's ~1 GB module
+    // graph out of our package cache and out of our own build graph.
+    .dependencies = .{},
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "examples",
+        "patches",
+        "scripts",
+        "README.md",
+        "README.ru.md",
+        "LICENSE",
+    },
+}

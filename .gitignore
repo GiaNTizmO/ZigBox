@@ -1,0 +1,27 @@
+# Zig build outputs
+/zig-out/
+/zig-out-*/
+/zig-cache/
+/.zig-cache/
+
+# Vendored upstream Zig — pulled by scripts/setup-zig-source.sh.
+# Track the submodule reference if added via `git submodule`, but
+# never commit Zig's build artifacts.
+/deps/zig/
+/deps/zig/zig-out/
+/deps/zig/zig-cache/
+/deps/zig/.zig-cache/
+/deps/zig/.zigbox-patched
+/deps/toolchains/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# Logs and tmp files
+*.log
+tmp/
