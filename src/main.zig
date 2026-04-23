@@ -12,6 +12,10 @@ const std = @import("std");
 const zig = @import("zig_compiler");
 const runtime = @import("runtime.zig");
 
+pub const std_options: std.Options = .{
+    .log_level = .info,
+};
+
 const embedded_zig_runner_command = "__zigbox-zig";
 
 fn isEmbeddedZigToolCommand(cmd: []const u8) bool {
