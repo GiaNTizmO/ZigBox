@@ -1,8 +1,11 @@
 diff --git a/build.zig b/build.zig
-index 2d196041..1de76656 100644
+index 2d196041..7575743c 100644
 --- a/build.zig
 +++ b/build.zig
-@@ -217,0 +218,18 @@ pub fn build(b: *std.Build) !void {
+@@ -214,6 +214,24 @@ pub fn build(b: *std.Build) !void {
+ 
+     test_step.dependOn(&exe.step);
+ 
 +    // --- zigbox: expose compiler as a static library --------------
 +    // Reuses exe.root_module so we share the module graph (InternPool,
 +    // AstGen, Sema, Air, link backends, ...) with the executable.
@@ -20,9 +23,20 @@ index 2d196041..1de76656 100644
 +    const libzig_step = b.step("libzig", "Build the zig compiler as a static library");
 +    libzig_step.dependOn(&libzig_install.step);
 +    // --- /zigbox --------------------------------------------------
++
+     if (target.result.os.tag == .windows and target.result.abi == .gnu) {
+         // LTO is currently broken on mingw, this can be removed when it's fixed.
+         exe.want_lto = false;
 diff --git a/src/main.zig b/src/main.zig
+index 10759938..d6084b07 100644
 --- a/src/main.zig
 +++ b/src/main.zig
-@@
+@@ -223,7 +223,7 @@ fn verifyLibcxxCorrectlyLinked() void {
+     }
+ }
+ 
 -fn mainArgs(gpa: Allocator, arena: Allocator, args: []const []const u8) !void {
 +pub fn mainArgs(gpa: Allocator, arena: Allocator, args: []const []const u8) !void {
+     const tr = tracy.trace(@src());
+     defer tr.end();
+ 

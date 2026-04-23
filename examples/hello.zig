@@ -1,5 +1,5 @@
-const std = @import("std");
+extern fn host_log(msg: [*:0]const u8) void;
 
 export fn entry() callconv(.C) void {
-    std.debug.print("Hello, World!\n", .{});
+    host_log("hello from user code");
 }

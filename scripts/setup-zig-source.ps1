@@ -211,16 +211,18 @@ function Ensure-AutoBootstrap {
     $platformDir = Join-Path $cacheRoot $platformKey
     $extractDir = Join-Path $platformDir $BootstrapVersion
     $zigExe = Join-Path $extractDir "zig.exe"
+    $zigLibDir = Join-Path $extractDir "lib"
     $archivePath = Join-Path $platformDir ([IO.Path]::GetFileName($archive.tarball))
 
     New-Item -ItemType Directory -Force -Path $platformDir | Out-Null
 
     if (Test-Path $zigExe) {
         $existingVersion = & $zigExe version
-        if ($existingVersion -eq $BootstrapVersion) {
+        if ($existingVersion -eq $BootstrapVersion -and (Test-Path $zigLibDir)) {
             Write-Info "reusing cached bootstrap zig: $zigExe"
             return $zigExe
         }
+        Write-Info "cached bootstrap Zig is incomplete or wrong version; refreshing $extractDir"
         Remove-Item -Recurse -Force $extractDir
     }
 
@@ -256,6 +258,9 @@ function Ensure-AutoBootstrap {
 
     if (-not (Test-Path $zigExe)) {
         Write-Fatal "bootstrap zig.exe was not found after extraction"
+    }
+    if (-not (Test-Path $zigLibDir)) {
+        Write-Fatal "bootstrap Zig lib directory was not found after extraction"
     }
 
     Write-Info "cached bootstrap zig: $zigExe"

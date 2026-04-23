@@ -29,7 +29,15 @@ After reading it, you can move on to a specific milestone from section 9.9 of th
 
 ## What this is
 
-The idea: take a Zig source file from the user (from an editor, file, network, REPL — wherever), run it through the Zig compiler embedded in the app, get a native binary for the current platform, load it into the same process, and execute it. The user code gets **full access to platform APIs** — UIKit on iOS, JNI/Activity on Android, WinAPI/Cocoa/X11 on desktop, threads, sockets, the file system.
+The idea: take a Zig source file from the user (from an editor, file, network, REPL — wherever), run it through the Zig compiler linked into the application, get a native binary for the current platform, load it, and execute it. The user code gets **full access to platform APIs** — UIKit on iOS, JNI/Activity on Android, WinAPI/Cocoa/X11 on desktop, threads, sockets, the file system.
+
+Current implementation split:
+
+- **Linux / macOS:** call upstream Zig's `mainArgs()` in-process.
+- **Windows:** still link the compiler into `zigbox.exe`, but invoke it through a self-reexec path of the same binary (`__zigbox-zig`). This isolates upstream `std.process.exit(...)` call sites and also lets Zig's internal `lld-link` / `dlltool` / `cc` / `-cc1` tool dispatch keep working.
+- **iOS target design:** still planned as pure in-process. The Windows subprocess workaround is a desktop-specific M1 stopgap, not the end-state architecture for iOS.
+
+So the current desktop prototype does **not** depend on an external `zig.exe` at runtime, but Windows is not yet a strict "compile inside the same host process" implementation.
 
 The main challenge is **iOS**. Apple formally prohibits running unsigned code, but signing is a cryptographic algorithm, not a privilege. If the application has a developer certificate's private key, it can sign on the device itself, and `amfid` will accept the resulting dylib. Details and limitations are in the plan.
 
@@ -51,7 +59,7 @@ This is a personal research project, **not intended for distribution through app
 
 ## Quick start
 
-Nothing to run yet. The planned CLI / application interface will look roughly like this:
+There is an early desktop prototype in the repository now. The eventual public API is still expected to look roughly like this:
 
 ```zig
 // future usage example
@@ -76,10 +84,12 @@ The milestone numbering matches section 9.9 of the plan (iOS), plus separate ste
   - Upstream Zig is vendored as a git submodule under `deps/zig`.
   - `patches/zig-expose-lib.patch` adds a `libzig` static-library artifact to upstream's `build.zig` (one additive block, no edits to existing lines — survives upgrades cleanly).
   - `scripts/setup-zig-source.sh` clones, patches, and builds `libzig.a`.
-  - Our `build.zig` links `libzig.a` into the host and imports `src/main.zig` from upstream as a Zig module, calling `mainArgs()` directly.
-- [ ] **M1.5** — replace `std.process.exit` call sites in the embedded compiler with recoverable errors so compile failures don't kill the host. Known limitation; happy-path smoke test doesn't trigger it.
+  - Our `build.zig` links `libzig` into the host and imports upstream `src/main.zig` as a Zig module.
+  - Linux/macOS currently call `mainArgs()` directly in-process.
+  - Windows currently re-execs the same `zigbox.exe` in an internal `__zigbox-zig` mode to isolate upstream `std.process.exit(...)` and support Zig's internal multi-tool dispatch (`lld-link`, `dlltool`, `cc`, `-cc1`, ...).
+- [ ] **M1.5** — replace `std.process.exit` call sites in the embedded compiler with recoverable errors so compile failures don't kill the host. Linux/macOS still need this for a robust pure in-process path; Windows currently uses self-reexec as a temporary desktop workaround.
 - [ ] Linux: compile + `dlopen` + `dlsym` a minimal `entry()` — code ready, not yet verified end-to-end.
-- [ ] Windows: same thing via `LoadLibrary` — code ready, not yet verified.
+- [x] Windows: same thing via `LoadLibrary` — verified by `zig build smoke` on Windows/MSVC with LLVM-enabled libzig and `zigbox-host.lib`.
 - [ ] macOS: same thing via `dlopen` — code ready, not yet verified.
 - [x] Host bridge API (C ABI): `host_log`, `host_greet` in `src/bridge.zig`. `host_ui_alert` / `host_http_get` deferred to Phase 6.
 
@@ -119,11 +129,23 @@ zig build run -- examples/use_bridge.zig
 # Important: the bootstrap zig must exactly match the selected upstream version.
 # By default `supported` = the project's tested version (currently 0.14.0).
 
-# One-time setup.
-.\scripts\setup-zig-source.ps1
+# Windows DLL emission currently requires libzig built with LLVM enabled.
+# The exact LLVM paths are environment-specific.
+.\scripts\setup-zig-source.ps1 `
+  -Tag 0.14.0 `
+  -Target x86_64-windows-msvc `
+  -EnableLlvm `
+  -ConfigH C:\path\to\zig\config.h `
+  -SearchPrefix C:\path\to\llvm
 
 # Same thing, but auto-download a matching bootstrap Zig:
-.\scripts\setup-zig-source.ps1 -Zig auto
+.\scripts\setup-zig-source.ps1 `
+  -Tag 0.14.0 `
+  -Zig auto `
+  -Target x86_64-windows-msvc `
+  -EnableLlvm `
+  -ConfigH C:\path\to\zig\config.h `
+  -SearchPrefix C:\path\to\llvm
 
 # Explicitly choose a supported release:
 .\scripts\setup-zig-source.ps1 -Tag 0.14.0 -Zig auto
@@ -134,19 +156,22 @@ zig build run -- examples/use_bridge.zig
 # Experimental: latest master snapshot.
 .\scripts\setup-zig-source.ps1 -Tag master -Zig auto
 
-# The script prints the exact path to the produced static library
-# (zig.lib under MSVC, libzig.a under MinGW). Pass it to subsequent
-# builds via -Dlibzig if the default path doesn't match:
-zig build smoke -Dlibzig="deps\zig\zig-out\lib\zig.lib"
-
-# If the linker reports unresolved LLVM/Win32 symbols, feed extras:
-zig build smoke -Dlibzig="…\zig.lib" -Dextra-libs=dbghelp,psapi,shell32
+# The setup script prints the produced libzig path. For an LLVM-enabled
+# Windows build you also need to tell zigbox's build about LLVM and zigcpp:
+zig build smoke `
+  -Dtarget=x86_64-windows-msvc `
+  -Dembedded-zig-have-llvm=true `
+  -Dembedded-zig-zigcpp=C:\path\to\zigcpp\zigcpp.lib `
+  -Dlibzig="deps\zig\zig-out\lib\zig.lib" `
+  --search-prefix C:\path\to\llvm
 ```
 
 Known Windows caveats (tracked against M1.5/Phase 1):
 
-- **Symbol export from EXE to runtime-loaded DLL.** On Linux/macOS `rdynamic` puts `host_log` / `host_greet` in the host's dynamic symbol table and `dlopen`'d user DLLs resolve against them automatically. On Windows (MSVC) `rdynamic` is effectively a no-op — EXEs don't usually export symbols. The smoke test will compile the user DLL fine, but the link step inside the embedded compiler may fail to resolve the `extern fn host_log(...)` references. Fix route: either (a) emit a stub import library for the host and have the embedded compiler link user code against it, or (b) switch the host bridge pattern to pointer-passing through `entry(ctx: *const HostBridge)`. (b) is cross-platform-cleaner — flagged as M1.6.
+- **Runtime path split.** Linux/macOS currently use `mainArgs()` directly in-process. Windows currently uses self-reexec of `zigbox.exe` in an internal `__zigbox-zig` mode. This keeps runtime independent from an external `zig.exe`, but it is still a subprocess workaround and not the final M1.5 architecture.
+- **Windows host import library.** `build.zig` generates `zigbox-host.lib` with `zig dlltool`, and the embedded compiler links user DLLs against it automatically. This is the Windows replacement for the ELF/Mach-O `rdynamic` pattern.
 - **Host must be built with the same ABI as libzig.** If upstream Zig on your machine builds libzig with `windows-msvc`, the host must also target `windows-msvc`; MinGW vs MSVC libs don't mix cleanly. `zig build -Dtarget=x86_64-windows-msvc` is the explicit form.
+- **LLVM-enabled `libzig` is required for Windows DLL emission.** The upstream 0.14.0 COFF self-hosted backend cannot emit the needed dynamic-library output for this project yet, so Windows currently requires `-EnableLlvm` during setup plus `-Dembedded-zig-have-llvm=true` during `zig build`.
 
 ### Phase 2 — Android
 - [ ] Gradle project with a JNI bridge to the Zig host.
@@ -226,7 +251,7 @@ If you're an AI agent working on this project in a new chat — one more reminde
 
 This project:
 
-- is in a research stage, no working code yet;
+- is in a research stage, with only an early desktop prototype so far;
 - targets the author's personal devices, not distribution;
 - uses an Apple developer certificate, which formally sits at the edge of the Apple Developer License Agreement (private key in the build). Justified by the project's nature (author's own devices, no third parties), but if you fork it — understand the risk to your own dev account;
 - does not guarantee the approach will survive future iOS releases — Apple routinely tightens signature checks, and on-device signing may one day stop passing.

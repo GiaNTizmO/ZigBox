@@ -1,11 +1,11 @@
-//! compiler.zig — in-process Zig compiler invocation.
+//! compiler.zig — embedded Zig compiler invocation.
 //!
 //! This module embeds the upstream Zig compiler as a library and
 //! calls it by the same entry point that the CLI uses —
-//! `mainArgs(gpa, arena, args)` in upstream src/main.zig — but
-//! without spawning a subprocess. See build.zig for the link-time
-//! wiring and scripts/setup-zig-source.sh for how libzig.a is
-//! produced.
+//! `mainArgs(gpa, arena, args)` in upstream src/main.zig. Linux/macOS
+//! call it directly in-process. Windows re-execs this same zigbox.exe
+//! in an internal compiler mode as a temporary M1 workaround for
+//! upstream `std.process.exit` call sites.
 //!
 //! # Known M1 limitation
 //!

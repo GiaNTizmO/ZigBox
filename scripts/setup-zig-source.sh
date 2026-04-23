@@ -181,11 +181,12 @@ PY
     if [[ -x "$extract_dir/zig" ]]; then
         local existing_version
         existing_version="$("$extract_dir/zig" version)"
-        if [[ "$existing_version" == "$BOOTSTRAP_VERSION" ]]; then
+        if [[ "$existing_version" == "$BOOTSTRAP_VERSION" && -d "$extract_dir/lib" ]]; then
             log "reusing cached bootstrap zig: $extract_dir/zig"
             ZIG_BOOTSTRAP_PATH="$extract_dir/zig"
             return
         fi
+        log "cached bootstrap Zig is incomplete or wrong version; refreshing $extract_dir"
         rm -rf "$extract_dir"
     fi
 
@@ -213,6 +214,7 @@ PY
     trap - RETURN
 
     [[ -x "$extract_dir/zig" ]] || err "bootstrap zig was not found after extraction"
+    [[ -d "$extract_dir/lib" ]] || err "bootstrap Zig lib directory was not found after extraction"
     log "cached bootstrap zig: $extract_dir/zig"
     ZIG_BOOTSTRAP_PATH="$extract_dir/zig"
 }

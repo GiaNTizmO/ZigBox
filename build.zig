@@ -277,8 +277,10 @@ fn linkEmbeddedLlvmDeps(compile: *std.Build.Step.Compile) void {
 // Build plan
 // ---------------------------------------------------------------
 // zigbox embeds the Zig compiler as a static library and loads
-// compiled user code via dlopen/LoadLibrary. The compiler is not
-// invoked as a subprocess — it lives inside our process image.
+// compiled user code via dlopen/LoadLibrary. Linux/macOS currently
+// call upstream mainArgs() directly in-process. Windows keeps the
+// compiler in this same binary, but re-execs zigbox.exe in an
+// internal compiler mode until M1.5 removes upstream process exits.
 //
 // Pre-requisites (run `scripts/setup-zig-source.{sh,ps1}` once):
 //   1. Clone upstream Zig into deps/zig. The setup scripts default
